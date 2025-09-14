@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"sync"
 )
 
 // Custom Error Type
@@ -23,19 +24,17 @@ type Pod struct {
 
 // Validate Pod status
 func PodsStatus(p Pod) error {
-	// Check empty name
 	if p.name == "" {
 		return &PodError{name: "Invalid Pod", reason: "pod name must be provided"}
 	}
 
-	// Define valid statuses
 	validStatus := map[string]bool{
 		"Started": true,
 		"Failed":  true,
 		"Pending": true,
+		"Running" : true,
 	}
 
-	// Check if status is valid
 	if !validStatus[p.status] {
 		return &PodError{name: p.name, reason: "Invalid pod status: " + p.status}
 	}
@@ -53,24 +52,35 @@ func main() {
 		{name: "", status: "Pending"},
 	}
 
+	var wg sync.WaitGroup
+
 	for _, pod := range pods {
-		err := PodsStatus(pod)
+		wg.Add(1)
 
-		if err != nil {
-			var tErr *PodError
-			if errors.As(err, &tErr) {
-				fmt.Println("⚠️ Custom error:", tErr)
-			} else {
-				fmt.Println("General error:", err)
+		// Launch goroutine per pod
+		go func(p Pod) {
+			defer wg.Done()
+
+			err := PodsStatus(p)
+
+			if err != nil {
+				var tErr *PodError
+				if errors.As(err, &tErr) {
+					fmt.Println("⚠️ Custom error:", tErr)
+				} else {
+					fmt.Println("General error:", err)
+				}
+				return
 			}
-			continue
-		}
 
-		// Handle pod status
-		if pod.status == "Failed" {
-			fmt.Printf("Pod %s has failed. Restart required.\n\n", pod.name)
-		} else {
-			fmt.Printf(" Pod %s is %s\n\n", pod.name, pod.status)
-		}
+			if p.status == "Failed" {
+				fmt.Printf("🚨 Pod %s has failed. Restart required.\n\n", p.name)
+			} else {
+				fmt.Printf("✅ Pod %s is %s\n\n", p.name, p.status)
+			}
+		}(pod) // pass pod as argument (avoid closure bug!)
 	}
+
+	wg.Wait()
+	fmt.Println("✅ All pod checks completed (concurrently).")
 }
